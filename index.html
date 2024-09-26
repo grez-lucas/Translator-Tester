@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Stream</title>
+  <style>
+    #transcript-box {
+      width: 100%;
+      height: 200px;
+      border: 1px solid #000;
+      margin-top: 20px;
+      padding: 10px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Audio Streaming</h1>
+  <button id="start">Start Streaming</button>
+  <button id="stop">Stop Streaming</button>
+  <div id="transcript-box"></div>
+
+  <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+  <script>
+    let socket;
+    let mediaRecorder;
+
+    document.getElementById('start').addEventListener('click', async () => {
+      socket = io('http://localhost:8088/audio');
+
+      socket.on('transcript', (data) => {
+        document.getElementById('transcript-box').textContent += data + '\n';
+      });
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+        const options = {
+          audioBitsPerSecond: 16000, mimeType: 'audio/webm;codecs:opus'
+        }
+        mediaRecorder = new MediaRecorder(stream, options);
+        mediaRecorder.start(100); // Wait 100ms to send a new data chunk
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            console.log('Sending chunk:', event.data.slice(0, 20).toString('hex'))
+            socket.emit('audio-stream', event.data);
+          }
+        };
+
+        console.log('Audio streaming started');
+      } catch (error) {
+        console.error('Error accessing microphone:', error);
+      }
+    });
+
+    document.getElementById('stop').addEventListener('click', () => {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        console.log('Audio streaming stopped');
+      }
+
+      if (socket) {
+        socket.disconnect();
+        console.log('Socket connection closed');
+      }
+    });
+  </script>
+</body>
+
+</html>
