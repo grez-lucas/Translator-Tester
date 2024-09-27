@@ -9,11 +9,11 @@ const router = express.Router();
 
 const binaryFilePath = path.join(__dirname, "twilio_output.bin");
 const base64EncodedFilePath = path.join(__dirname, "twilio_output.rawb64");
-const jsonFilePath = path.join(__dirname, "twilio_output.json");
+const jsonFilePath = path.join(__dirname, "twilio_long.json");
 
 // Socket.io connection to your FastAPI WebSocket server
 const socket = socketIOClient(
-  "http://localhost:8088/audio?src_language=es-CO&tgt_language=en&input_format=twilio",
+  "http://127.20.0.3:8080/audio?src_language=es-CO&tgt_language=en&input_format=twilio",
   {
     transports: ["websocket"],
   },
@@ -35,6 +35,7 @@ function sendBinaryFileOverSocket() {
   const readStream = fs.createReadStream(binaryFilePath);
 
   readStream.on("data", (chunk) => {
+    console.log(chunk)
     buffer = Buffer.concat([buffer, chunk]);
 
     // When the buffer reaches the threshold, send the data
@@ -59,7 +60,8 @@ function sendBinaryFileOverSocket() {
 }
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function sendJSONFileOverSocket() {
-  const BUFFER_SIZE_THRESHOLD = 60000;
+  var base64 = require('base-64');
+  const BUFFER_SIZE_THRESHOLD = 90000;
   let buffer = Buffer.alloc(0);
 
   var file = fs.readFileSync(jsonFilePath, "utf8");
@@ -69,18 +71,18 @@ async function sendJSONFileOverSocket() {
   for (const event of jsonData) {
     if (event.event === "media") {
       // console.log(`Media payload: ${event.media.payload}`);
-
+      console.log(event.media.chunk)
       var stringPayload = event.media.payload.toString();
       console.log(typeof stringPayload);
       // var encodedBase64Payload = event.media.payload.toString("base64");
       // var decodedPayload = base64ToBytes(event.media.payload);
 
-      var decodedPayload = Buffer.from(stringPayload, "base64");
-      console.log(`Decoded media payload: ${decodedPayload}`);
+      var decodedPayload = base64.decode(stringPayload);
+      //console.log(`Decoded media payload: ${decodedPayload}`);
 
       // Add decoded bytes to buffer
-      buffer = Buffer.concat([buffer, decodedPayload]);
-      console.log(`Current buffer length: ${buffer.length}`);
+      buffer = Buffer.concat([buffer, base64ToInt8Array(decodedPayload)]);
+      //console.log(`Current buffer length: ${buffer.length}`);
 
       if (buffer.length >= BUFFER_SIZE_THRESHOLD) {
         console.log(`Sending accumulated buffer: ${buffer.length} bytes`);
@@ -90,7 +92,7 @@ async function sendJSONFileOverSocket() {
       await delay(100);
     }
   }
-
+  
   // Send remaining data
   if (buffer.length > 0) {
     console.log(`Sending final buffer: ${buffer.length} bytes`);
@@ -117,6 +119,10 @@ async function sendJSONFileRawOverSocket() {
   }
 }
 
+function base64ToInt8Array(decodedPayload){
+  return Uint8Array.from(decodedPayload.split('').map(letter => letter.charCodeAt(0)))
+}
+
 // From https://developer.mozilla.org/en-US/docs/Glossary/Base64#the_unicode_problem.
 function base64ToBytes(base64) {
   const binString = atob(base64);
@@ -132,7 +138,7 @@ function decodeAndSendBinaryOverSocket() {
 
   const fileContents = fs.readFileSync(base64EncodedFilePath);
 
-  var encodedFileStringContents = fileContents.toString("base64");
+  var encodedFileStringContents = fileContents.toString();
   // console.log(`File contents: ${encodedFileStringContents.split(0, 20)}`);
 
   var decodedBase64Contents = base64ToBytes(encodedFileStringContents);
@@ -140,8 +146,8 @@ function decodeAndSendBinaryOverSocket() {
   // console.log(`Decoded file contents: ${decodedBase64Contents}`);
 
   // Add the bytes to the buffer
-  Buffer.concat([buffer, decodedBase64Contents]);
-
+  Buffer.concat([buffer, Buffer.from(encodedFileStringContents)]);
+  console.log(buffer)
   // Emit the buffer to FASTAPI
   socket.emit("audio_chunk", buffer);
   buffer = Buffer.alloc(0);
@@ -154,9 +160,9 @@ function handleErrors(err) {
 // Connect to the WebSocket and start sending binary data
 socket.on("connect", () => {
   console.log("Connected to WebSocket server");
-  // sendBinaryFileOverSocket();
+  //sendBinaryFileOverSocket();
 
-  // decodeAndSendBinaryOverSocket();
+  //decodeAndSendBinaryOverSocket();
 
   sendJSONFileOverSocket();
   // sendJSONFileRawOverSocket();
